@@ -2,10 +2,17 @@
 
 This repository contains scripts that allow you to run a physical simulation of a system with gravity.
 The same principles could however be used to simulate any forces you like.
-The time integration is done using the Verlet algorithm.
+The simulation also includes (inelastic) collisions.
+The time integration is done using the (velocity) Verlet algorithm.
 
-The Jupyter Notebook contains explanations and motivations for this implementation.
-On top of that there is a Python script that can run the simulation in one go for convenience.
+The theory behind the simulation can be found in the "Theory" directory.
+Here, the Jupyter Notebook "Gravity\_simulation\_theory.ipynb" contains explanations and motivations for
+the basic version of this implementation. 
+The Notebook "Collision\_simulation\_theory.ipynb" contains the explanations for 
+the implementation of the collision physics.
+Finally the markdown file "Derivations.md" contains some theoretical physical derivations.
+
+On top of this, there is a Python script that can run the simulation in one go for convenience.
 The same simulation has also been implemented in C++, for which three files are relevant: 
 the source code script itself, the header file that defines parameters and initial conditions, 
 and a Python script to plot the results.
@@ -14,7 +21,11 @@ The Python script outputs two plots, for the trajectories in the xy-plane and th
 The C++ script outputs a csv file with the results, which is used as input for the Python plotting script, 
 which then creates the same two plots as the Python simulation script.
 
-For the test that was run and can be seen in the output directory here, 
-the results from both the Python and C++ simulation are the same, as they should.
-The only difference is the runtime; on my machine the Python simulation took 3.93 seconds, 
-while the C++ simulation only needed 0.96 seconds.
+Two test runs are included and can be seen in the "output" directory, one with and one without collisions. 
+The test without collisions shows some nice elliptical orbits of four objects around their centre of mass.
+The test with collisions shows how four objects bounce around while losing energy, 
+so that they end up clustering together.
+The results from the Python and C++ simulations are the same, as they should.
+The only difference is the runtime; on my machine the Python simulation took about 5 seconds, 
+while the C++ simulation only needed about 1.5 seconds for the example without collisions.
+For the example with collisions, Python took about 17 seconds and C++ only about 9 seconds.

@@ -5,12 +5,12 @@ import numpy as np
 print("Plotting results...")
 
 # Need these constants again
-dt = 1e-4  # timestep
-N_steps = 10000
+dt = 1e-3  # timestep
+N_steps = 20000
 times = np.arange(N_steps) * dt
 N_objects = 4
 
-filename = "output\\Gravity_simulation_output_cpp.csv"
+filename = "output\\Gravity_simulation_collision_output_cpp.csv"
 data = np.loadtxt(filename, delimiter=",")
 
 # Extract the proper arrays from the data
@@ -39,9 +39,11 @@ plt.xlabel('Position x')
 plt.ylabel('Position y')
 plt.title('Trajectories in the system')
 plt.legend()
-plt.xlim(-1.2, 1.2)
-plt.ylim(-1.2, 1.2)
-plt.savefig('output\\trajectories_xy_cpp.png', dpi=300)
+plt.grid()
+#plt.xlim(-1.2, 1.2)
+#plt.ylim(-1.2, 1.2)
+plt.tight_layout()
+plt.savefig('output\\trajectories_xy_collision_cpp.png', dpi=300)
 plt.show()
 
 # Plot the different energies over time
@@ -53,7 +55,7 @@ plt.title("Energies in the system")
 plt.xlabel("Time")
 plt.ylabel("Energy")
 plt.legend()
-plt.savefig('output\\energies_cpp.png', dpi=300)
+plt.savefig('output\\energies_collision_cpp.png', dpi=300)
 plt.show()
 
 print("Results plotted!")

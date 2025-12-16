@@ -1,6 +1,7 @@
 // A physical simulation of gravity between a chosen amount of objects.
+// Now also with collision physics.
 
-#include "Gravity_constants.hpp"
+#include "Gravity_constants_collision.hpp"
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -20,11 +21,7 @@ std::vector<double> gravity_force(double m_i, double m_j, std::vector<double> r_
     for (int k = 0; k < 3; k++) {
         r_ij[k] = r_i[k] - r_j[k];
     }
-
     double distance = std::sqrt( std::inner_product(r_ij.begin(), r_ij.end(), r_ij.begin(), 0.0) );
-    if (distance < minimal_distance) {
-        distance = minimal_distance;
-    }
 
     std::vector<double> force(3);
     for (int k = 0; k < 3; k++) {  // note r_ij / distance is the unit vector
@@ -50,21 +47,204 @@ std::vector<double> next_velocity(
     return next_velocity_vec;
 }
 
-/// @brief Find the position at the next timestep using the Verlet integration method.
+/// @brief Find the position at the next timestep using the velocity Verlet integration method.
 /// @param current_position Position vector at the current timestep
-/// @param previous_position Position vector at the previous timestep
+/// @param current_velocity Velocity vector at the current timestep
 /// @param current_acceleration Acceleration vector at the current timestep
 /// @return The next position vector
 std::vector<double> next_position(
     std::vector<double> current_position,
-    std::vector<double> previous_position,
+    std::vector<double> current_velocity,
     std::vector<double> current_acceleration
 ) {
     std::vector<double> next_position_vec(3);
     for (int k = 0; k < 3; k++) {
-        next_position_vec[k] = 2 * current_position[k] - previous_position[k] + current_acceleration[k] * dt*dt;
+        next_position_vec[k] = current_position[k] + current_velocity[k] * dt + 0.5 * current_acceleration[k] * dt*dt;
     }
     return next_position_vec;
+}
+
+/// @brief Perform a Galilean transformation.
+/// @param target_velocity Velocity vector of the object that is to be transformed
+/// @param frame_velocity Velocity vector of the frame you want to transform to
+/// @return The transformed velocity vector
+std::vector<double> galilean_transform(
+    std::vector<double> target_velocity,
+    std::vector<double> frame_velocity
+) {
+    std::vector<double> transformed_velocity(3);
+    for (int k = 0; k < 3; k++) {
+        transformed_velocity[k] = target_velocity[k] - frame_velocity[k];
+    }
+    return transformed_velocity;
+}
+
+/// @brief Calculate the rotation angles around the axes to align with 
+/// the line between the centres of the objects i and j.
+/// @param position_i Position vector of object i
+/// @param position_j Position vector of object j
+/// @return alpha, beta, gamma; angles around the x, y and z axis respectively
+std::vector<double> get_rotation_angles(
+    std::vector<double> position_i,
+    std::vector<double> position_j
+) {
+    std::vector<double> difference(3);
+    for (int k = 0; k < 3; k++) {
+        difference[k] = position_i[k] - position_j[k];
+    }  // (delta_x, delta_y, delta_z)
+    // Using atan2 ensures the right quadrant sign
+    double alpha = std::atan2(difference[2], difference[1]);
+    double beta = std::atan2(difference[0], difference[2]);
+    double gamma = std::atan2(difference[1], difference[0]);
+    return {alpha, beta, gamma};
+}
+
+/// @brief Multiply two 3x3 matrices
+/// @param A The first 3x3 matrix to multiply
+/// @param B The second 3x3 matrix to multiply
+/// @return C; The resulting 3x3 matrix
+std::vector<std::vector<double>> matrices_multiplication(
+    std::vector<std::vector<double>> A,
+    std::vector<std::vector<double>> B
+) {
+    std::vector<std::vector<double>> C(3, std::vector<double>(3));
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            C[i][j] = 0;
+            for (int k = 0; k < 3; k++) {
+                C[i][j] += A[i][k] * B[k][j];
+            }
+        }
+    }
+    return C;
+}
+
+/// @brief Multiply a 3x3 matrix with a 3D vector
+/// @param matrix The 3x3 matrix to multiply
+/// @param vector The 3D vector to be multiplied
+/// @return The resulting 3D vector
+std::vector<double> matrix_vector_multiplication(
+    std::vector<std::vector<double>> matrix,
+    std::vector<double> vector
+) {
+    std::vector<double> result_vector(3);
+    for (int i = 0; i < 3; i++) {
+        result_vector[i] = 0;
+        for (int j = 0; j < 3; j++) {
+            result_vector[i] += matrix[i][j] * vector[j];
+        }
+    }
+    return result_vector;
+}
+
+/// @brief Perform a rotation around the x, y and z axis.
+/// @param alpha Angle around the x axis
+/// @param beta Angle around the y axis
+/// @param gamma Angle around the z axis
+/// @param target_vector Vector you want to rotate
+/// @return The rotated vector
+std::vector<double> rotation(
+    double alpha, double beta, double gamma,
+    std::vector<double> target_vector
+) {
+    std::vector<std::vector<double>> rotation_matrix_x = {
+        {1, 0, 0},
+        {0, std::cos(alpha), -std::sin(alpha)},
+        {0, std::sin(alpha), std::cos(alpha)}
+    };
+    std::vector<std::vector<double>> rotation_matrix_y = {
+        {std::cos(beta), 0, std::sin(beta)},
+        {0, 1, 0},
+        {-std::sin(beta), 0, std::cos(beta)}
+    };
+    std::vector<std::vector<double>> rotation_matrix_z = {
+        {std::cos(gamma), -std::sin(gamma), 0},
+        {std::sin(gamma), std::cos(gamma), 0},
+        {0, 0, 1}
+    };
+    std::vector<std::vector<double>> combined_rotation = matrices_multiplication(
+        matrices_multiplication(rotation_matrix_x, rotation_matrix_y),
+        rotation_matrix_z
+    );  // note xyz
+    return matrix_vector_multiplication(combined_rotation, target_vector);
+}
+
+/// @brief Perform an inverse rotation around the x, y and z axis,
+/// compared to the function above. Note no minus sign on the
+/// angles is needed relative to above!
+/// @param alpha Angle around the x axis
+/// @param beta Angle around the y axis
+/// @param gamma Angle around the z axis
+/// @param target_vector Vector you want to rotate
+/// @return The inversely rotated vector
+std::vector<double> inverse_rotation(
+    double alpha, double beta, double gamma,
+    std::vector<double> target_vector
+) {
+    std::vector<std::vector<double>> rotation_matrix_x = {
+        {1, 0, 0},
+        {0, std::cos(alpha), -std::sin(-alpha)},
+        {0, std::sin(-alpha), std::cos(alpha)}
+    };
+    std::vector<std::vector<double>> rotation_matrix_y = {
+        {std::cos(beta), 0, std::sin(-beta)},
+        {0, 1, 0},
+        {-std::sin(-beta), 0, std::cos(beta)}
+    };
+    std::vector<std::vector<double>> rotation_matrix_z = {
+        {std::cos(gamma), -std::sin(-gamma), 0},
+        {std::sin(-gamma), std::cos(gamma), 0},
+        {0, 0, 1}
+    };
+    std::vector<std::vector<double>> combined_rotation = matrices_multiplication(
+        matrices_multiplication(rotation_matrix_z, rotation_matrix_y),
+        rotation_matrix_x
+    );  // note zyx
+    return matrix_vector_multiplication(combined_rotation, target_vector);
+}
+
+/// @brief Calculate the velocity of object i and j after an (in)elastic
+/// collision, where i moves and j is stationary.
+/// @param m_i Mass of object i
+/// @param m_j Mass of object j
+/// @param velocity_before_i Velocity of object i before the collision
+/// @return velocity_after_i; Velocity of object i after the collision
+/// @return velocity_after_j; Velocity of object j after the collision
+std::tuple<std::vector<double>, std::vector<double>> velocity_transfer_collision(
+    double m_i, double m_j,
+    std::vector<double> velocity_before_i
+) {
+    std::vector<double> velocity_after_i(3);
+    std::vector<double> velocity_after_j(3);
+    for (int k = 0; k < 3; k++) {
+        velocity_after_i[k] = (m_i - e * m_j) / (m_i + m_j) * velocity_before_i[k];
+        velocity_after_j[k] = (1 + e) * m_i / (m_i + m_j) * velocity_before_i[k];
+    }
+    return {velocity_after_i, velocity_after_j};
+}
+
+/// @brief Determine if objects i and j are moving towards each other, so that a collision 
+/// can happen. This is the case if for any of the components of the position and 
+/// velocity vectors, the position component of i is smaller and the velocity 
+/// component of i is larger, or vice versa.
+/// @param position_i Position vector of object i
+/// @param position_j Position vector of object j
+/// @param velocity_i Velocity vector of object i
+/// @param velocity_j Velocity vector of object j
+/// @return any_true; true if objects move towards each other
+bool objects_move_towards_each_other(
+    std::vector<double> position_i,
+    std::vector<double> position_j,
+    std::vector<double> velocity_i,
+    std::vector<double> velocity_j
+) {
+    bool any_true = false;
+    for (int k = 0; k < 3; k++) {
+        // Check to see if both conditions are true, make any_true also true if so
+        any_true = any_true || (position_i[k] < position_j[k] && velocity_i[k] > velocity_j[k]);
+        any_true = any_true || (position_i[k] > position_j[k] && velocity_i[k] < velocity_j[k]);
+    }
+    return any_true;
 }
 
 int main() {
@@ -75,6 +255,12 @@ int main() {
     if (masses.size() != N_objects) {
         throw std::runtime_error(
             "The number of masses (" + std::to_string(masses.size()) +
+            ") does not match number of objects (" + std::to_string(N_objects) + ")!"
+        );
+    }
+    else if (radii.size() != N_objects) {
+        throw std::runtime_error(
+            "The number of radii (" + std::to_string(radii.size()) +
             ") does not match number of objects (" + std::to_string(N_objects) + ")!"
         );
     }
@@ -124,7 +310,7 @@ int main() {
         std::vector<double>(3, 0.0)
     );
 
-    // Use Euler integration to find the positions at the second timestep
+    // Then also determine acceleration for step 0
     for (int j = 0; j < N_objects; j++) {
         std::vector<double> force(3, 0.0);  // to add up all forces on object j
         for (int k = 0; k < N_objects; k++) {
@@ -141,43 +327,14 @@ int main() {
         for (int l = 0; l < 3; l++) {
             double acceleration = force[l] / masses[j];
             previous_accelerations[j][l] = acceleration;  // update these to contain step 0 accelerations
-
-            // Now update positions with Euler
-            positions[1][j][l] = positions[0][j][l] + velocities[0][j][l] * dt + 0.5 * acceleration * dt*dt;
         }
-    }
-
-    // With the new positions of all the particles, calculate the acceleration at step 1
-    for (int j = 0; j < N_objects; j++) {
-        std::vector<double> force(3, 0.0);  // to add up all forces on object j
-        for (int k = 0; k < N_objects; k++) {
-            // Consider all other objects k, so without k==j
-            if (k != j) {
-                // Loop for: force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
-                std::vector<double> f_ij = gravity_force(masses[j], masses[k], positions[0][j], positions[0][k]);
-                for (int l = 0; l < 3; l++) {
-                    force[l] += f_ij[l];
-                }
-            }
-        }
-
-        std::vector<double> acceleration(3, 0.0);
-        for (int l = 0; l < 3; l++) {
-            acceleration[l] = force[l] / masses[j];
-        }
-
-        // Now update velocities with Verlet
-        velocities[1][j] = next_velocity(velocities[0][j], acceleration, previous_accelerations[j]);
-
-        // And update the previous acceleration for the next loop
-        previous_accelerations[j] = acceleration;
     }
     
-    // Main simulation loop for all remaining steps
-    for (size_t i = 2; i < N_steps; i++) {  // 0 set by initial conditions, 1 set by Euler
+    // Main simulation loop
+    for (size_t i = 1; i < N_steps; i++) {  // 0 set by initial conditions
         for (int j = 0; j < N_objects; j++) {
             // Update positions, with the already calculated previous acceleration
-            positions[i][j] = next_position(positions[i-1][j], positions[i-2][j], previous_accelerations[j]);
+            positions[i][j] = next_position(positions[i-1][j], velocities[i-1][j], previous_accelerations[j]);
         }
 
         // Once all positions are updated, calculate new accelerations and update velocities
@@ -203,6 +360,56 @@ int main() {
             velocities[i][j] = next_velocity(velocities[i-1][j], acceleration, previous_accelerations[j]);
             // And update the previous acceleration for the next loop
             previous_accelerations[j] = acceleration;
+        }
+
+        // Collisions
+        for (int j = 0; j < N_objects; j++) {
+            std::vector<double> position_j = positions[i][j];
+            // Now only check for collisions between object pairs
+            for (int k = j+1; k < N_objects; k++) {
+                // (Fun sidenote: in Python, we can define velocity_j in the previous loop,
+                // because when we change velocities[i][j] due to a collision later, this also changes
+                // velocity_j. But in C++, that does not happen, so we need to define it here, so
+                // that a potential change due to a collision with a previous object is not lost.
+                // Before I fixed this, it altered the example run quite significantly.)
+                std::vector<double> velocity_j = velocities[i][j];
+
+                std::vector<double> position_k = positions[i][k];
+                std::vector<double> velocity_k = velocities[i][k];
+                // Check collision condition
+                std::vector<double> difference(3);
+                for (int l = 0; l < 3; l++) {
+                    difference[l] = position_j[l] - position_k[l];
+                }
+                double distance = std::sqrt( std::inner_product(difference.begin(), difference.end(), difference.begin(), 0.0) );
+                bool moving_towards_each_other = objects_move_towards_each_other(position_j, position_k, velocity_j, velocity_k);
+                if ((distance < radii[j] + radii[k]) && moving_towards_each_other) {
+                    // 1 Galilean transform, with velocity_k as the frame velocity
+                    std::vector<double> transformed_velocity = galilean_transform(velocity_j, velocity_k);
+
+                    // 2 Rotation
+                    std::vector<double> angles = get_rotation_angles(position_j, position_k);
+                    std::vector<double> rotated_transformed_velocity = rotation(angles[0], angles[1], angles[2], 
+                                                                                transformed_velocity);
+
+                    // 3 Velocity transfer
+                    auto [velocity_after_j, velocity_after_k] = velocity_transfer_collision(masses[j], masses[k], 
+                                                                                            rotated_transformed_velocity);
+                    
+                    // 4 Inverse rotation
+                    velocity_after_j = inverse_rotation(angles[0], angles[1], angles[2], velocity_after_j);
+                    velocity_after_k = inverse_rotation(angles[0], angles[1], angles[2], velocity_after_k);
+
+                    // 5 Inverse Galilean transform
+                    std::vector<double> negative_velocity_k = { -velocity_k[0], -velocity_k[1], -velocity_k[2] };
+                    velocity_after_j = galilean_transform(velocity_after_j, negative_velocity_k);
+                    velocity_after_k = galilean_transform(velocity_after_k, negative_velocity_k);
+
+                    // And finally assign
+                    velocities[i][j] = velocity_after_j;
+                    velocities[i][k] = velocity_after_k;
+                }
+            }
         }
     }
 
@@ -230,11 +437,7 @@ int main() {
                 for (int l = 0; l < 3; l++) {
                     r_ij[l] = r_j[l] - r_k[l];
                 }
-
                 double distance = std::sqrt( std::inner_product(r_ij.begin(), r_ij.end(), r_ij.begin(), 0.0) );
-                if (distance < minimal_distance) {
-                    distance = minimal_distance;
-                }
 
                 double potential_jk = -G * masses[j] * masses[k] / distance;
                 potential_energy += potential_jk;  // sum the potential energy for all particles
@@ -253,7 +456,7 @@ int main() {
 
     // Save the positions and different energies to a file to plot in Python
     std::cout << "Writing output..." << std::endl;
-    std::string filename = "output\\Gravity_simulation_output_cpp.csv";
+    std::string filename = "output\\Gravity_simulation_collision_output_cpp.csv";
     std::ofstream out_file(filename);
     for (size_t i = 0; i < N_steps; i++) {
         for (int j = 0; j < N_objects; j++) {
