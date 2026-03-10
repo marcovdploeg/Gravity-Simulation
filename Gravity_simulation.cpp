@@ -1,7 +1,7 @@
 // A physical simulation of gravity between a chosen amount of objects.
-// Now also with collision physics.
+// Now also with collision physics and boundary conditions.
 
-#include "Gravity_constants_collision.hpp"
+#include "Gravity_constants_boundary_conditions.hpp"
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -16,7 +16,12 @@
 /// @param r_i Position vector of object i
 /// @param r_j Position vector of object j
 /// @return The gravitational force vector
-std::vector<double> gravity_force(double m_i, double m_j, std::vector<double> r_i, std::vector<double> r_j) {
+std::vector<double> gravity_force(
+    double m_i, 
+    double m_j, 
+    std::vector<double> r_i, 
+    std::vector<double> r_j
+) {
     std::vector<double> r_ij(3);
     for (int k = 0; k < 3; k++) {
         r_ij[k] = r_i[k] - r_j[k];
@@ -247,6 +252,102 @@ bool objects_move_towards_each_other(
     return any_true;
 }
 
+/// @brief Calculate the velocity of object i after an (in)elastic collision with the wall.
+/// @param velocity_before_i Velocity component of object i before the collision
+/// @return velocity_after_i; Velocity component of object i after the collision
+double velocity_transfer_collision_wall(
+    double velocity_before_i
+) {
+    double velocity_after_i;
+    // dereference e_wall since it's an optional, but always has a value if this function is called
+    velocity_after_i = -(*e_wall) * velocity_before_i;
+    return velocity_after_i;
+}
+
+/// @brief Check if the object is colliding for each axis/component, 
+/// and apply the velocity transfer if so.
+/// @param position_i Position vector of object i
+/// @param velocity_i Velocity vector of object i
+/// @return velocity_after_i; Velocity vector of object i after wall collision
+std::vector<double> wall_collision_check_and_transfer(
+    std::vector<double> position_i,
+    std::vector<double> velocity_i
+) {
+    std::vector<double> velocity_after_i(3);
+    for (int k = 0; k < 3; k++) {
+        // Find where the object is outside of the box
+        bool cross;
+        // dereference box_length since it's an optional, but always has a value if this function is called
+        cross = (position_i[k] > 0.5*(*box_length)) || (position_i[k] < -0.5*(*box_length));
+    
+        // Determine if a collision can happen, if the object moves towards the wall
+        bool collision;
+        collision = (position_i[k] > 0) == (velocity_i[k] > 0);
+
+        // Apply velocity transfer where both conditions are for component k
+        if (cross && collision) {
+            velocity_after_i[k] = velocity_transfer_collision_wall(velocity_i[k]);
+        }
+        else {
+            velocity_after_i[k] = velocity_i[k];
+        }
+    }
+    return velocity_after_i;
+}
+
+/// @brief A modulus function that works the same as in Python, like we need in 
+/// the closest_copy_coordinates function, so that the result is always in [0, b),
+/// even for negative a
+/// @param a The first number to take the modulus of
+/// @param b The second number to take the modulus of
+/// @return The modulus of a and b, as in Python
+double python_mod(double a, double b) {
+    return std::fmod(std::fmod(a, b) + b, b);
+}
+
+/// @brief Find the coordinates of the closest copy of each object relative to
+///        the object i according to the minimal image convention.
+/// @param position_i Position vector of object i
+/// @param positions Array of position vectors of all objects
+/// @return copy_positions; Array of position vectors of the closest copies of all objects
+std::vector<std::vector<double>> closest_copy_coordinates(
+    std::vector<double> position_i,
+    std::vector<std::vector<double>> positions
+) {
+    std::vector<std::vector<double>> copy_positions(N_objects, std::vector<double>(3));
+    for (int j = 0; j < N_objects; j++) {
+        for (int k = 0; k < 3; k++) {
+            // dereference box_length since it's an optional, but always has a value if this function is called
+            copy_positions[j][k] = position_i[k] - python_mod(position_i[k] - positions[j][k] + 0.5*(*box_length), *box_length)
+                                   + 0.5*(*box_length);
+        }
+    }
+    return copy_positions;
+}
+
+/// @brief Check if an object has crossed the periodic boundary, 
+///        and apply the correction in position if so.
+/// @param position_i Position vector of object i
+/// @return crossed_positions; Position vector of object i after applying periodic crossing correction
+std::vector<double> apply_periodic_crossing(
+    std::vector<double> position_i
+) {
+    std::vector<double> crossed_positions(3);
+    for (int k = 0; k < 3; k++) {
+        // dereference box_length since it's an optional, but always has a value if this function is called
+        if (position_i[k] > 0.5*(*box_length)) {
+            crossed_positions[k] = position_i[k] - *box_length;
+        }
+        else if (position_i[k] < -0.5*(*box_length)) {
+            crossed_positions[k] = position_i[k] + *box_length;
+        }
+        else {
+            crossed_positions[k] = position_i[k];
+        }
+    }
+    return crossed_positions;
+}
+
 int main() {
     std::cout << "Starting gravity simulation..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -275,6 +376,19 @@ int main() {
             "The number of initial velocities (" + std::to_string(initial_velocities.size()) +
             ") does not match number of objects (" + std::to_string(N_objects) + ")!"
         );
+    }
+
+    // Make sure boundary conditions are consistent
+    if (!box_length.has_value() && periodic) {
+        std::cerr << "You can't have periodic boundary conditions without a box length!" << std::endl;
+        std::cerr << "The simulation will now apply the minimal image convention but objects will not loop around the box."
+        << std::endl;
+        throw std::runtime_error("Please define box_length or set periodic to False.");
+    }
+    else if (!box_length.has_value() && e_wall.has_value()) {
+        std::cerr << "You can't have wall collisions without a box length!" << std::endl;
+        std::cerr << "The simulation will now ignore wall collisions, as if e_wall was set to None." << std::endl;
+        throw std::runtime_error("Please define box_length or set e_wall to None.");
     }
 
     // Initialize positions and velocities
@@ -313,11 +427,24 @@ int main() {
     // Then also determine acceleration for step 0
     for (int j = 0; j < N_objects; j++) {
         std::vector<double> force(3, 0.0);  // to add up all forces on object j
+
+        std::vector<std::vector<double>> copy_positions;
+        if (periodic) {
+            copy_positions = closest_copy_coordinates(positions[0][j], positions[0]);
+        }
+
         for (int k = 0; k < N_objects; k++) {
             // Consider all other objects k, so without k==j
             if (k != j) {
+                std::vector<double> f_ij;
+                // Check for periodic box
+                if (!periodic) {
+                    f_ij = gravity_force(masses[j], masses[k], positions[0][j], positions[0][k]);
+                }
+                else {  // Apply minimal image convention
+                    f_ij = gravity_force(masses[j], masses[k], positions[0][j], copy_positions[k]);
+                }
                 // Loop for: force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
-                std::vector<double> f_ij = gravity_force(masses[j], masses[k], positions[0][j], positions[0][k]);
                 for (int l = 0; l < 3; l++) {
                     force[l] += f_ij[l];
                 }
@@ -340,11 +467,24 @@ int main() {
         // Once all positions are updated, calculate new accelerations and update velocities
         for (int j = 0; j < N_objects; j++) {
             std::vector<double> force(3, 0.0);  // to add up all forces on object j
+
+            std::vector<std::vector<double>> copy_positions;
+            if (periodic) {
+                copy_positions = closest_copy_coordinates(positions[i][j], positions[i]);
+            }
+
             for (int k = 0; k < N_objects; k++) {
                 // Consider all other objects k, so without k==j
                 if (k != j) {
+                    std::vector<double> f_ij;
+                    // Check for periodic box
+                    if (!periodic) {
+                        f_ij = gravity_force(masses[j], masses[k], positions[i][j], positions[i][k]);
+                    }
+                    else {  // Apply minimal image convention
+                        f_ij = gravity_force(masses[j], masses[k], positions[i][j], copy_positions[k]);
+                    }
                     // Loop for: force += gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
-                    std::vector<double> f_ij = gravity_force(masses[j], masses[k], positions[i][j], positions[i][k]);
                     for (int l = 0; l < 3; l++) {
                         force[l] += f_ij[l];
                     }
@@ -411,6 +551,30 @@ int main() {
                 }
             }
         }
+
+        // Boundary conditions
+        if (!box_length.has_value()) {
+            continue;  // no boundary conditions, so skip to next timestep
+        }
+        for (int j = 0; j < N_objects; j++) {
+            // Check if the object is outside the box
+            bool is_out = false;
+            for (int k = 0; k < 3; k++) {
+                if (std::abs(positions[i][j][k]) > 0.5 * (*box_length)) {
+                    is_out = true;
+                    break;
+                }
+            }
+            if (is_out) {
+                // Check finite or periodic box
+                if (!periodic) {
+                    velocities[i][j] = wall_collision_check_and_transfer(positions[i][j], velocities[i][j]);
+                }
+                else {
+                    positions[i][j] = apply_periodic_crossing(positions[i][j]);
+                }
+            }
+        }
     }
 
     // Calculate energies
@@ -432,13 +596,24 @@ int main() {
         for (int j = 0; j < N_objects-1; j++) {  // don't need to consider the last object, is cancelled in next loop
             std::vector<double> r_j = positions[i][j];
             for (int k = j+1; k < N_objects; k++) {  // start from the object after j
-                std::vector<double> r_k = positions[i][k];
-                std::vector<double> r_ij(3);
-                for (int l = 0; l < 3; l++) {
-                    r_ij[l] = r_j[l] - r_k[l];
+                double distance;
+                if (!periodic) {
+                    std::vector<double> r_k = positions[i][k];
+                    std::vector<double> r_ij(3);
+                    for (int l = 0; l < 3; l++) {
+                        r_ij[l] = r_j[l] - r_k[l];
+                    }
+                    distance = std::sqrt( std::inner_product(r_ij.begin(), r_ij.end(), r_ij.begin(), 0.0) );
                 }
-                double distance = std::sqrt( std::inner_product(r_ij.begin(), r_ij.end(), r_ij.begin(), 0.0) );
-
+                else {  // Apply minimal image convention
+                    std::vector<std::vector<double>> copy_positions = closest_copy_coordinates(r_j, positions[i]);
+                    std::vector<double> copy_r_k = copy_positions[k];
+                    std::vector<double> r_ij(3);
+                    for (int l = 0; l < 3; l++) {
+                        r_ij[l] = r_j[l] - copy_r_k[l];
+                    }
+                    distance = std::sqrt( std::inner_product(r_ij.begin(), r_ij.end(), r_ij.begin(), 0.0) );
+                }
                 double potential_jk = -G * masses[j] * masses[k] / distance;
                 potential_energy += potential_jk;  // sum the potential energy for all particles
             }
@@ -456,7 +631,7 @@ int main() {
 
     // Save the positions and different energies to a file to plot in Python
     std::cout << "Writing output..." << std::endl;
-    std::string filename = "output\\Gravity_simulation_collision_output_cpp.csv";
+    std::string filename = "example_output\\boundary_conditions_test\\Gravity_simulation_output_cpp.csv";
     std::ofstream out_file(filename);
     for (size_t i = 0; i < N_steps; i++) {
         for (int j = 0; j < N_objects; j++) {

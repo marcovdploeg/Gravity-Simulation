@@ -1,5 +1,5 @@
 # A physical simulation of gravity between a chosen amount of objects.
-# Now also with collision physics.
+# Now also with collision physics and boundary conditions.
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,14 +9,17 @@ import time
 # Constants of the simulation
 G = 1
 dt = 1e-3  # timestep
-N_steps = 20000
+N_steps = 10000
 times = np.arange(N_steps) * dt
-N_objects = 4
+N_objects = 3
 e = 0.8  # coefficient of restitution
+box_length = 10
+periodic = True
+e_wall = None
 
 # Make an array with the mass and radius of each object
-masses = np.array([100, 10, 10, 1])
-radii = np.array([1, 0.5, 0.5, 0.1])
+masses = np.array([1, 1, 1])
+radii = np.array([0.1, 0.1, 0.1])
 
 # Make an array 'positions' to mark the positions of the objects
 # Here positions[i] are the positions of all objects at timestep i,
@@ -25,10 +28,9 @@ radii = np.array([1, 0.5, 0.5, 0.1])
 positions = np.zeros(shape=[N_steps, N_objects, 3])  # 3 for x, y, z coordinates
 
 # Choose initial positions
-positions[0][0] = np.array([0,0,0])
-positions[0][1] = np.array([0,10,0])
-positions[0][2] = np.array([0,-10,0])
-positions[0][3] = np.array([5,5,0])
+positions[0][0] = np.array([4,4,0])
+positions[0][1] = np.array([-4,4,0])
+positions[0][2] = np.array([4,-4,0])
 
 # Make an array 'velocities' to mark the velocities of the objects
 # with the same structure as positions
@@ -36,9 +38,8 @@ velocities = np.zeros(shape=[N_steps, N_objects, 3])
 
 # Choose initial velocities
 velocities[0][0] = np.array([0,0,0])
-velocities[0][1] = np.array([-4,-2,0])
-velocities[0][2] = np.array([-4,2,0])
-velocities[0][3] = np.array([-1,-1,0])
+velocities[0][1] = np.array([0,0,0])
+velocities[0][2] = np.array([0,0,0])
 
 #####   END of setup   #####
 
@@ -51,6 +52,16 @@ if len(masses) != N_objects:
     raise KeyboardInterrupt(f"The number of masses ({len(masses)}) does not match the number of objects ({N_objects})!")
 elif len(radii) != N_objects:
     raise KeyboardInterrupt(f"The number of radii ({len(radii)}) does not match the number of objects ({N_objects})!")
+
+# Make sure boundary conditions are consistent
+if box_length is None and periodic:
+    print("You can't have periodic boundary conditions without a box length!")
+    print("The simulation will now apply the minimal image convention but objects will not loop around the box.")
+    raise KeyboardInterrupt("Please define box_length or set periodic to False.")
+elif box_length is None and e_wall is not None:
+    print("You can't have wall collisions without a box length!")
+    print("The simulation will now ignore wall collisions, as if e_wall was set to None.")
+    raise KeyboardInterrupt("Please define box_length or set e_wall to None.")
 
 def gravity_force(m_i, m_j, r_i, r_j):
     """
@@ -208,6 +219,72 @@ def objects_move_towards_each_other(position_i, position_j, velocity_i, velocity
     # If any of these is True, there will be a collision
     return np.any(collisions)
 
+def velocity_transfer_collision_wall(velocity_before_i):
+    """
+    Calculate the velocity of object i after an (in)elastic
+    collision with the wall.
+    Parameters:
+        - velocity_before_i (np.array): Velocity of object i before the collision
+    Returns:
+        - velocity_after_i (np.array): Velocity of object i after the collision
+    """
+    velocity_after_i = -e_wall * velocity_before_i
+    return velocity_after_i
+
+def wall_collision_check_and_transfer(position_i, velocity_i):
+    """
+    Check if the object is colliding for each axis/component,
+    and apply the velocity transfer if so.
+    Parameters:
+        - position_i (np.array): Position vector of object i
+        - velocity_i (np.array): Velocity vector of object i
+    Returns:
+        - velocity_after_i (np.array): Velocity vector of object i after wall collision
+    """
+    walls = 0.5*np.array([box_length]*3)
+    # Find where the object is outside the box
+    where_cross = np.logical_or(position_i > walls, position_i < -walls)
+
+    # Determine if a collision can happen, if the object moves towards the wall
+    collisions = (position_i > 0) == (velocity_i > 0)
+
+    # Apply velocity transfer where both conditions are met per component
+    velocity_after_i = np.where(
+        np.logical_and(where_cross, collisions),
+        velocity_transfer_collision_wall(velocity_i),
+        velocity_i
+    )
+    return velocity_after_i
+
+def closest_copy_coordinates(position_i, positions):
+    """
+    Find the coordinates of the closest copy of each object relative to
+    the object i according to the minimal image convention.
+    Parameters:
+        - position_i (np.array): Position vector of object i
+        - positions (np.array): Array of position vectors of all objects
+    Returns:
+        - copy_positions (np.array): Array of position vectors of the closest copies of all objects
+    """
+    copy_positions = position_i -  (position_i - positions + 0.5*box_length) % box_length + 0.5*box_length
+    return copy_positions
+
+def apply_periodic_crossing(position_i):
+    """
+    Check if an object has crossed the periodic boundary, 
+    and apply the correction in position if so.
+    Parameters:
+        - position_i (np.array): Position vector of object i
+    Returns:
+        - crossed_positions (np.array): Position vector of object i after applying periodic crossing correction
+    """
+    crossed_positions = np.copy(position_i)
+    where_cross_positive = position_i > 0.5*box_length
+    where_cross_negative = position_i < -0.5*box_length
+    crossed_positions[where_cross_positive] -= box_length
+    crossed_positions[where_cross_negative] += box_length
+    return crossed_positions
+
 # Also need to keep the previous acceleration for velocity
 # Note we don't save these for all timesteps, only the previous one
 previous_accelerations = np.zeros(shape=[N_objects, 3])
@@ -215,10 +292,18 @@ previous_accelerations = np.zeros(shape=[N_objects, 3])
 # Then also determine acceleration for step 0
 for j in range(N_objects):
     force = np.zeros(3)  # to add up all forces on object j
+
+    if periodic:  # get closest copy positions for object j
+        copy_positions = closest_copy_coordinates(positions[0][j], positions[0])
+
     for k in range(N_objects):
         # Consider all other objects k, so without k==j
         if k != j:
-            force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
+            # Check for periodic box
+            if not periodic:
+                force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
+            else:  # Apply minimal image convention
+                force += gravity_force(masses[j], masses[k], positions[0][j], copy_positions[k])
     previous_accelerations[j] = force / masses[j]  # update these to contain step 0 accelerations
 
 # Main simulation loop
@@ -230,10 +315,18 @@ for i in range(1, N_steps):  # 0 set by initial conditions
     # Once all positions are updated, calculate new accelerations and update velocities
     for j in range(N_objects):
         force = np.zeros(3)  # to add up all forces on object j
+
+        if periodic:  # get closest copy positions for object j
+            copy_positions = closest_copy_coordinates(positions[i][j], positions[i])
+
         for k in range(N_objects):
             # Consider all other objects k, so without k==j
             if k != j:
-                force += gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
+                # Check for periodic box
+                if not periodic:
+                    force += gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
+                else:  # Apply minimal image convention
+                    force += gravity_force(masses[j], masses[k], positions[i][j], copy_positions[k])
         acceleration = force / masses[j]
 
         # So update velocities
@@ -274,6 +367,19 @@ for i in range(1, N_steps):  # 0 set by initial conditions
                 # And finally assign
                 velocities[i][j] = velocity_after_j
                 velocities[i][k] = velocity_after_k
+    
+    # Boundary conditions
+    if box_length is None:
+        continue  # no boundary conditions, so skip to next timestep
+
+    for j in range(N_objects):
+        # Check if the object is outside the box
+        if np.any(np.abs(positions[i][j]) > 0.5*box_length):
+            # Check finite or periodic box
+            if not periodic:
+                velocities[i][j] = wall_collision_check_and_transfer(positions[i][j], velocities[i][j])
+            else:
+                positions[i][j] = apply_periodic_crossing(positions[i][j])
 
 # Calculate energies
 kinetic_per_particle = 0.5 * masses * np.sum(velocities**2, axis=2)
@@ -283,9 +389,12 @@ potential_total = np.zeros(shape=[N_steps])
 for j in range(N_objects-1):  # don't need to consider the last object, is cancelled in next loop
     r_j = positions[:,j,:]
     for k in range(j+1, N_objects):  # start from the object after j
-        r_k = positions[:,k,:]
-        distance = np.linalg.norm(r_j - r_k, axis=1)  # distance between j and k at all timesteps
-
+        if not periodic:
+            r_k = positions[:,k,:]
+            distance = np.linalg.norm(r_j - r_k, axis=1)  # distance between j and k at all timesteps
+        else:  # Apply minimal image convention
+            copy_r_k = closest_copy_coordinates(r_j, positions[:,k,:])
+            distance = np.linalg.norm(r_j - copy_r_k, axis=1)
         potential_jk = -G * masses[j] * masses[k] / distance
         potential_total += potential_jk
 
@@ -314,7 +423,7 @@ plt.grid()
 #plt.xlim(-10.2, 10.2)
 #plt.ylim(-10.2, 10.2)
 plt.tight_layout()
-plt.savefig('output\\trajectories_xy_collision_python.png', dpi=300)
+plt.savefig('example_output\\boundary_conditions_test\\trajectories_xy_python.png', dpi=300)
 plt.show()
 
 # Plot the different energies over time
@@ -326,7 +435,7 @@ plt.title("Energies in the system")
 plt.xlabel("Time")
 plt.ylabel("Energy")
 plt.legend()
-plt.savefig('output\\energies_collision_python.png', dpi=300)
+plt.savefig('example_output\\boundary_conditions_test\\energies_python.png', dpi=300)
 plt.show()
 
 print("Results plotted!")
