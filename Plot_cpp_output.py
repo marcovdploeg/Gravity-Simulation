@@ -5,12 +5,13 @@ import numpy as np
 print("Plotting results...")
 
 # Need these constants again
-dt = 1e-3  # timestep
+output_dir = 'example_output\\basic_test'
+dt = 1e-4  # timestep
 N_steps = 10000
 times = np.arange(N_steps) * dt
-N_objects = 3
+N_objects = 4
 
-filename = "example_output\\boundary_conditions_test\\Gravity_simulation_output_cpp.csv"
+filename = f"{output_dir}\\Gravity_simulation_output_cpp.csv"
 data = np.loadtxt(filename, delimiter=",")
 
 # Extract the proper arrays from the data

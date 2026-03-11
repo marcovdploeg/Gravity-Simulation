@@ -22,6 +22,7 @@ the source code script itself, the header file that defines parameters and initi
 and a Python script to plot the results.
 Any outputs from the scripts are placed in the "example_output" directory.
 The Python script outputs two plots, for the trajectories in the xy-plane and the energies in the system.
+Additionally it creates a text file with the parameters that were used, for later reference.
 The C++ script outputs a csv file with the results, which is used as input for the Python plotting script, 
 which then creates the same two plots as the Python simulation script.
 

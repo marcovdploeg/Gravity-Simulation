@@ -6,20 +6,21 @@ import matplotlib.pyplot as plt
 import time
 
 #####   START of set up of parameters and initial conditions   #####
+output_dir = 'example_output\\basic_test'
 # Constants of the simulation
 G = 1
-dt = 1e-3  # timestep
+dt = 1e-4  # timestep
 N_steps = 10000
-times = np.arange(N_steps) * dt
-N_objects = 3
-e = 0.8  # coefficient of restitution
-box_length = 10
-periodic = True
+N_objects = 4
+e = 1.0  # coefficient of restitution
+box_length = None
+periodic = False
 e_wall = None
+times = np.arange(N_steps) * dt
 
 # Make an array with the mass and radius of each object
-masses = np.array([1, 1, 1])
-radii = np.array([0.1, 0.1, 0.1])
+masses = np.array([10, 10, 10, 10])
+radii = np.array([0.01, 0.01, 0.01, 0.01])
 
 # Make an array 'positions' to mark the positions of the objects
 # Here positions[i] are the positions of all objects at timestep i,
@@ -28,18 +29,20 @@ radii = np.array([0.1, 0.1, 0.1])
 positions = np.zeros(shape=[N_steps, N_objects, 3])  # 3 for x, y, z coordinates
 
 # Choose initial positions
-positions[0][0] = np.array([4,4,0])
-positions[0][1] = np.array([-4,4,0])
-positions[0][2] = np.array([4,-4,0])
+positions[0][0] = np.array([1,0,0])
+positions[0][1] = np.array([0,1,0])
+positions[0][2] = np.array([0,-1,0])
+positions[0][3] = np.array([-1,0,0])
 
 # Make an array 'velocities' to mark the velocities of the objects
 # with the same structure as positions
 velocities = np.zeros(shape=[N_steps, N_objects, 3])
 
 # Choose initial velocities
-velocities[0][0] = np.array([0,0,0])
-velocities[0][1] = np.array([0,0,0])
-velocities[0][2] = np.array([0,0,0])
+velocities[0][0] = np.array([0,-1,0])
+velocities[0][1] = np.array([1,0,0])
+velocities[0][2] = np.array([-1,0,0])
+velocities[0][3] = np.array([0,1,0])
 
 #####   END of setup   #####
 
@@ -62,6 +65,22 @@ elif box_length is None and e_wall is not None:
     print("You can't have wall collisions without a box length!")
     print("The simulation will now ignore wall collisions, as if e_wall was set to None.")
     raise KeyboardInterrupt("Please define box_length or set e_wall to None.")
+
+# Write the used parameters to a text file for later reference
+with open(f'{output_dir}\\python_parameters.txt', 'w') as f:
+    f.write(f'output_dir = {output_dir}\n')
+    f.write(f'G = {G}\n')
+    f.write(f'dt = {dt}\n')
+    f.write(f'N_steps = {N_steps}\n')
+    f.write(f'N_objects = {N_objects}\n')
+    f.write(f'e = {e}\n')
+    f.write(f'box_length = {box_length}\n')
+    f.write(f'periodic = {periodic}\n')
+    f.write(f'e_wall = {e_wall}\n')
+    f.write(f'masses = {masses}\n')
+    f.write(f'radii = {radii}\n')
+    f.write(f'initial_positions = \n{positions[0]}\n')
+    f.write(f'initial_velocities = \n{velocities[0]}\n')
 
 def gravity_force(m_i, m_j, r_i, r_j):
     """
@@ -423,7 +442,7 @@ plt.grid()
 #plt.xlim(-10.2, 10.2)
 #plt.ylim(-10.2, 10.2)
 plt.tight_layout()
-plt.savefig('example_output\\boundary_conditions_test\\trajectories_xy_python.png', dpi=300)
+plt.savefig(f'{output_dir}\\trajectories_xy_python.png', dpi=300)
 plt.show()
 
 # Plot the different energies over time
@@ -435,7 +454,7 @@ plt.title("Energies in the system")
 plt.xlabel("Time")
 plt.ylabel("Energy")
 plt.legend()
-plt.savefig('example_output\\boundary_conditions_test\\energies_python.png', dpi=300)
+plt.savefig(f'{output_dir}\\energies_python.png', dpi=300)
 plt.show()
 
 print("Results plotted!")

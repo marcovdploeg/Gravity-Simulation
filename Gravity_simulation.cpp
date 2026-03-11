@@ -1,7 +1,7 @@
 // A physical simulation of gravity between a chosen amount of objects.
 // Now also with collision physics and boundary conditions.
 
-#include "Gravity_constants_boundary_conditions.hpp"
+#include "Gravity_constants.hpp"
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -9,6 +9,7 @@
 #include <fstream>
 #include <chrono>
 #include <iomanip>
+#include <string>
 
 /// @brief Calculate the gravitational force exerted on object i by object j.
 /// @param m_i Mass of object i
@@ -631,7 +632,7 @@ int main() {
 
     // Save the positions and different energies to a file to plot in Python
     std::cout << "Writing output..." << std::endl;
-    std::string filename = "example_output\\boundary_conditions_test\\Gravity_simulation_output_cpp.csv";
+    std::string filename = output_dir + "\\Gravity_simulation_output_cpp.csv";
     std::ofstream out_file(filename);
     for (size_t i = 0; i < N_steps; i++) {
         for (int j = 0; j < N_objects; j++) {

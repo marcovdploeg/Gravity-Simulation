@@ -2,6 +2,9 @@
 #pragma once
 #include <vector>
 #include <optional>
+#include <string>
+
+const std::string output_dir = "example_output\\basic_test";  // Directory to save the output files in
 
 constexpr double G = 1.0;                                   // Gravitational constant, 1 in simulation units
 constexpr double dt = 1e-4;                                 // Timestep
