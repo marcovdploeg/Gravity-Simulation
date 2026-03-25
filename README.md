@@ -2,7 +2,7 @@
 
 This repository contains scripts that allow you to run a physical simulation of a system with gravity.
 The same principles could however be used to simulate any forces you like.
-The simulation also includes (inelastic) collisions and different boundary conditions.
+The simulation also includes (inelastic) collisions, different boundary conditions and external forces.
 The time integration is done using the (velocity) Verlet algorithm.
 
 The theory behind the simulation can be found in the "Theory" directory.
@@ -14,7 +14,8 @@ The markdown file "Derivations.md" contains some theoretical physical derivation
 The Notebook "Boundary_conditions_theory.ipynb" contains the explanations for 
 the implementation of the boundary conditions, consisting of the 'no/infinite box', 
 'finite box' and 'periodic box' scenarios.
-Finally, the Notebook "External_force_theory.ipynb" is to be implemented in the future.
+Finally, the Notebook "External_force_theory.ipynb" contains the explanations for the implementation
+of external forces, that can be defined however and with whichever parameters one desires.
 
 On top of this, there is a Python script that can run the simulation in one go for convenience.
 The same simulation has also been implemented in C++, for which three files are relevant: 
@@ -33,6 +34,8 @@ The test with collisions shows how four objects bounce around while losing energ
 so that they end up clustering together.
 The test with boundary conditions shows how objects will move differently under the periodic boundary conditions, 
 which also apply the minimal image convention to calculate forces between objects.
+The test with external forces shows how objects move under the influence of this external force while 
+it dominstes over the gravitational force between the objects. In this case sinusoidal movement occurs.
 
 The results from the Python and C++ simulations are the same, as they should.
 The only difference is the runtime; on my machine the Python simulation took about 5 seconds, 

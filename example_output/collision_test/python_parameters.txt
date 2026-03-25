@@ -19,3 +19,8 @@ initial_velocities =
  [-4. -2.  0.]
  [-4.  2.  0.]
  [-1. -1.  0.]]
+use_external_force = False
+External force function: 
+def external_force():
+    # placeholder
+    return None

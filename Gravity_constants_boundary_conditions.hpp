@@ -3,6 +3,7 @@
 #include <vector>
 #include <optional>
 #include <string>
+#include <cmath>
 
 const std::string output_dir = "example_output\\boundary_conditions_test";  // Directory to save the output files in
 
@@ -27,3 +28,10 @@ inline std::vector<std::vector<double>> initial_velocities = {
     {0.0, 0.0, 0.0},
     {0.0, 0.0, 0.0}
 };
+
+// External force setup
+constexpr bool use_external_force = false;
+inline std::vector<double> external_force() {
+    // placeholder
+    return {0.0, 0.0, 0.0};
+}

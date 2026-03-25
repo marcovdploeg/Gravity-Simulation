@@ -1,0 +1,35 @@
+output_dir = example_output\external_force_test
+G = 1
+dt = 0.001
+N_steps = 5000
+N_objects = 3
+e = 1.0
+box_length = None
+periodic = False
+e_wall = None
+masses = [0.01 0.01 0.01]
+radii = [0.01 0.01 0.01]
+initial_positions = 
+[[ 1.  0.  0.]
+ [-1.  0.  0.]
+ [ 0.  0.  0.]]
+initial_velocities = 
+[[ 1.  0.  0.]
+ [-1.  0.  0.]
+ [ 0.  0.  0.]]
+use_external_force = True
+External force function: 
+def external_force(mass, time, initial_time=0, force_constant=100):
+    """
+    An example of an external force; this one oscillates sinusoidally with time 
+    on the y-axis and is proportional to the mass of the object.
+    Parameters:
+    - mass (float): The mass of the object
+    - time (float): The simulation time
+    - initial_time (float): A parameter to shift the time for the force calculation
+    - force_constant (float): A constant to scale the force
+    """
+    used_time = time + initial_time
+    direction_vector = np.array([0, 1, 0])  # force in the y-direction
+    return force_constant * mass * np.sin(2 * np.pi * used_time) * direction_vector
+

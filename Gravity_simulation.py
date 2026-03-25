@@ -4,14 +4,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import inspect
 
 #####   START of set up of parameters and initial conditions   #####
-output_dir = 'example_output\\basic_test'
+output_dir = 'example_output\\external_force_test'
 # Constants of the simulation
 G = 1
-dt = 1e-4  # timestep
-N_steps = 10000
-N_objects = 4
+dt = 1e-3  # timestep
+N_steps = 5000
+N_objects = 3
 e = 1.0  # coefficient of restitution
 box_length = None
 periodic = False
@@ -19,8 +20,8 @@ e_wall = None
 times = np.arange(N_steps) * dt
 
 # Make an array with the mass and radius of each object
-masses = np.array([10, 10, 10, 10])
-radii = np.array([0.01, 0.01, 0.01, 0.01])
+masses = np.array([0.01, 0.01, 0.01])
+radii = np.array([0.01, 0.01, 0.01])
 
 # Make an array 'positions' to mark the positions of the objects
 # Here positions[i] are the positions of all objects at timestep i,
@@ -30,19 +31,33 @@ positions = np.zeros(shape=[N_steps, N_objects, 3])  # 3 for x, y, z coordinates
 
 # Choose initial positions
 positions[0][0] = np.array([1,0,0])
-positions[0][1] = np.array([0,1,0])
-positions[0][2] = np.array([0,-1,0])
-positions[0][3] = np.array([-1,0,0])
+positions[0][1] = np.array([-1,0,0])
+positions[0][2] = np.array([0,0,0])
 
 # Make an array 'velocities' to mark the velocities of the objects
 # with the same structure as positions
 velocities = np.zeros(shape=[N_steps, N_objects, 3])
 
 # Choose initial velocities
-velocities[0][0] = np.array([0,-1,0])
-velocities[0][1] = np.array([1,0,0])
-velocities[0][2] = np.array([-1,0,0])
-velocities[0][3] = np.array([0,1,0])
+velocities[0][0] = np.array([1,0,0])
+velocities[0][1] = np.array([-1,0,0])
+velocities[0][2] = np.array([0,0,0])
+
+# External force setup
+use_external_force = True
+def external_force(mass, time, initial_time=0, force_constant=100):
+    """
+    An example of an external force; this one oscillates sinusoidally with time 
+    on the y-axis and is proportional to the mass of the object.
+    Parameters:
+    - mass (float): The mass of the object
+    - time (float): The simulation time
+    - initial_time (float): A parameter to shift the time for the force calculation
+    - force_constant (float): A constant to scale the force
+    """
+    used_time = time + initial_time
+    direction_vector = np.array([0, 1, 0])  # force in the y-direction
+    return force_constant * mass * np.sin(2 * np.pi * used_time) * direction_vector
 
 #####   END of setup   #####
 
@@ -81,6 +96,9 @@ with open(f'{output_dir}\\python_parameters.txt', 'w') as f:
     f.write(f'radii = {radii}\n')
     f.write(f'initial_positions = \n{positions[0]}\n')
     f.write(f'initial_velocities = \n{velocities[0]}\n')
+    f.write(f'use_external_force = {use_external_force}\n')
+    force_function_code = inspect.getsource(external_force)
+    f.write(f'External force function: \n{force_function_code}\n')
 
 def gravity_force(m_i, m_j, r_i, r_j):
     """
@@ -323,6 +341,11 @@ for j in range(N_objects):
                 force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
             else:  # Apply minimal image convention
                 force += gravity_force(masses[j], masses[k], positions[0][j], copy_positions[k])
+    
+    # Calculate the external force
+    if use_external_force:
+        force += external_force(masses[j], 0)
+    
     previous_accelerations[j] = force / masses[j]  # update these to contain step 0 accelerations
 
 # Main simulation loop
@@ -346,6 +369,11 @@ for i in range(1, N_steps):  # 0 set by initial conditions
                     force += gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
                 else:  # Apply minimal image convention
                     force += gravity_force(masses[j], masses[k], positions[i][j], copy_positions[k])
+        
+        # Calculate the external force
+        if use_external_force:
+            force += external_force(masses[j], times[i])
+        
         acceleration = force / masses[j]
 
         # So update velocities

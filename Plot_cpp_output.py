@@ -5,11 +5,11 @@ import numpy as np
 print("Plotting results...")
 
 # Need these constants again
-output_dir = 'example_output\\basic_test'
-dt = 1e-4  # timestep
-N_steps = 10000
+output_dir = 'example_output\\external_force_test'
+dt = 1e-3  # timestep
+N_steps = 5000
 times = np.arange(N_steps) * dt
-N_objects = 4
+N_objects = 3
 
 filename = f"{output_dir}\\Gravity_simulation_output_cpp.csv"
 data = np.loadtxt(filename, delimiter=",")
@@ -44,7 +44,7 @@ plt.grid()
 #plt.xlim(-1.2, 1.2)
 #plt.ylim(-1.2, 1.2)
 plt.tight_layout()
-plt.savefig('example_output\\boundary_conditions_test\\trajectories_xy_cpp.png', dpi=300)
+plt.savefig(f'{output_dir}\\trajectories_xy_cpp.png', dpi=300)
 plt.show()
 
 # Plot the different energies over time
@@ -56,7 +56,7 @@ plt.title("Energies in the system")
 plt.xlabel("Time")
 plt.ylabel("Energy")
 plt.legend()
-plt.savefig('example_output\\boundary_conditions_test\\energies_cpp.png', dpi=300)
+plt.savefig(f'{output_dir}\\energies_cpp.png', dpi=300)
 plt.show()
 
 print("Results plotted!")

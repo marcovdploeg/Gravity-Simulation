@@ -1,10 +1,9 @@
 // A physical simulation of gravity between a chosen amount of objects.
 // Now also with collision physics and boundary conditions.
 
-#include "Gravity_constants.hpp"
+#include "Gravity_constants_external_force.hpp"
 #include <iostream>
 #include <vector>
-#include <cmath>
 #include <numeric>
 #include <fstream>
 #include <chrono>
@@ -451,6 +450,14 @@ int main() {
                 }
             }
         }
+
+        // Calculate external force
+        if (use_external_force) {
+            std::vector<double> external_force_vector = external_force(masses[j], 0.0);
+            for (int l = 0; l < 3; l++) {
+                force[l] += external_force_vector[l];
+            }
+        }
         
         for (int l = 0; l < 3; l++) {
             double acceleration = force[l] / masses[j];
@@ -489,6 +496,14 @@ int main() {
                     for (int l = 0; l < 3; l++) {
                         force[l] += f_ij[l];
                     }
+                }
+            }
+
+            // Calculate external force
+            if (use_external_force) {
+                std::vector<double> external_force_vector = external_force(masses[j], i*dt);
+                for (int l = 0; l < 3; l++) {
+                    force[l] += external_force_vector[l];
                 }
             }
 
