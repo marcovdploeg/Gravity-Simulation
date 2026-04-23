@@ -8,17 +8,18 @@ The time integration is done using the (velocity) Verlet algorithm.
 ## Theory notebooks
 
 The theory behind the simulation can be found in the "Theory" directory.
-Here, the Jupyter notebook "Gravity\_simulation\_theory.ipynb" contains explanations and motivations for
+Here: 
+- The Jupyter notebook "Gravity\_simulation\_theory.ipynb" contains explanations and motivations for
 the basic version of this implementation. 
-The notebook "Collision\_simulation\_theory.ipynb" contains the explanations for 
+- The notebook "Collision\_simulation\_theory.ipynb" contains the explanations for 
 the implementation of the collision physics.
-The markdown file "Derivations.md" contains some theoretical physical derivations for these collisions.
-The notebook "Boundary\_conditions\_theory.ipynb" contains the explanations for 
+- The markdown file "Derivations.md" contains some theoretical physical derivations for these collisions.
+- The notebook "Boundary\_conditions\_theory.ipynb" contains the explanations for 
 the implementation of the boundary conditions, consisting of the 'no/infinite box', 
 'finite box' and 'periodic box' scenarios.
-Finally, the notebook "External\_force\_theory.ipynb" contains the explanations for the implementation
+- Finally, the notebook "External\_force\_theory.ipynb" contains the explanations for the implementation
 of external forces, that can be defined however and with whichever parameters one desires.
-An additional notebook "Many\_particles\_theory" explains how to set up a simulation with many particles 
+- An additional notebook "Many\_particles\_theory.ipynb" explains how to set up a simulation with many particles 
 where the initial positions are uniformly distributed and the initial velocities are drawn from the 
 Maxwell-Boltzmann distribution. Some improvements to the algorithm are also made here.
 
