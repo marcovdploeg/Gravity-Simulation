@@ -1,5 +1,5 @@
 # A physical simulation of gravity between a chosen amount of objects.
-# Now also with collision physics and boundary conditions.
+# Now also with collision physics, boundary conditions and external forces.
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,21 +7,24 @@ import time
 import inspect
 
 #####   START of set up of parameters and initial conditions   #####
-output_dir = 'example_output\\external_force_test'
+output_dir = 'example_output\\many_particles_test'
 # Constants of the simulation
 G = 1
-dt = 1e-3  # timestep
-N_steps = 5000
-N_objects = 3
+dt = 5e-3  # timestep
+N_steps = 1000
+N_objects = 100
 e = 1.0  # coefficient of restitution
-box_length = None
-periodic = False
+box_length = 10
+periodic = True
 e_wall = None
 times = np.arange(N_steps) * dt
 
 # Make an array with the mass and radius of each object
-masses = np.array([0.01, 0.01, 0.01])
-radii = np.array([0.01, 0.01, 0.01])
+masses = np.ones(N_objects)
+radii = np.ones(N_objects) * 0.1
+
+# Set a random seed for reproducibility
+np.random.seed(42)
 
 # Make an array 'positions' to mark the positions of the objects
 # Here positions[i] are the positions of all objects at timestep i,
@@ -30,34 +33,22 @@ radii = np.array([0.01, 0.01, 0.01])
 positions = np.zeros(shape=[N_steps, N_objects, 3])  # 3 for x, y, z coordinates
 
 # Choose initial positions
-positions[0][0] = np.array([1,0,0])
-positions[0][1] = np.array([-1,0,0])
-positions[0][2] = np.array([0,0,0])
+positions[0] = np.random.uniform(-0.5*box_length, 0.5*box_length, (N_objects, 3))
 
 # Make an array 'velocities' to mark the velocities of the objects
 # with the same structure as positions
 velocities = np.zeros(shape=[N_steps, N_objects, 3])
 
 # Choose initial velocities
-velocities[0][0] = np.array([1,0,0])
-velocities[0][1] = np.array([-1,0,0])
-velocities[0][2] = np.array([0,0,0])
+temp = 10
+k_B = 1  # Boltzmann constant
+velocities[0] = np.random.normal(loc=0, scale=np.sqrt(k_B * temp / masses[0]), size=(N_objects, 3))
 
 # External force setup
-use_external_force = True
-def external_force(mass, time, initial_time=0, force_constant=100):
-    """
-    An example of an external force; this one oscillates sinusoidally with time 
-    on the y-axis and is proportional to the mass of the object.
-    Parameters:
-    - mass (float): The mass of the object
-    - time (float): The simulation time
-    - initial_time (float): A parameter to shift the time for the force calculation
-    - force_constant (float): A constant to scale the force
-    """
-    used_time = time + initial_time
-    direction_vector = np.array([0, 1, 0])  # force in the y-direction
-    return force_constant * mass * np.sin(2 * np.pi * used_time) * direction_vector
+use_external_force = False
+def external_force():
+    # placeholder
+    return None
 
 #####   END of setup   #####
 
@@ -324,62 +315,62 @@ def apply_periodic_crossing(position_i):
 
 # Also need to keep the previous acceleration for velocity
 # Note we don't save these for all timesteps, only the previous one
-previous_accelerations = np.zeros(shape=[N_objects, 3])
-
-# Then also determine acceleration for step 0
+forces = np.zeros(shape=[N_objects, 3])  # to add up all forces on each object
 for j in range(N_objects):
-    force = np.zeros(3)  # to add up all forces on object j
-
     if periodic:  # get closest copy positions for object j
         copy_positions = closest_copy_coordinates(positions[0][j], positions[0])
 
-    for k in range(N_objects):
-        # Consider all other objects k, so without k==j
-        if k != j:
-            # Check for periodic box
-            if not periodic:
-                force += gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
-            else:  # Apply minimal image convention
-                force += gravity_force(masses[j], masses[k], positions[0][j], copy_positions[k])
+    for k in range(j+1, N_objects):
+        # Consider remaining objects k, so k>j
+        # Check for periodic box
+        if not periodic:
+            force = gravity_force(masses[j], masses[k], positions[0][j], positions[0][k])
+            forces[j] += force
+            forces[k] -= force
+        else:  # Apply minimal image convention
+            force = gravity_force(masses[j], masses[k], positions[0][j], copy_positions[k])
+            forces[j] += force
+            forces[k] -= force
     
     # Calculate the external force
     if use_external_force:
-        force += external_force(masses[j], 0)
+        forces[j] += external_force(masses[j], 0)
     
-    previous_accelerations[j] = force / masses[j]  # update these to contain step 0 accelerations
+previous_accelerations = forces / masses.reshape(-1,1)  # update these to contain step 0 accelerations
 
 # Main simulation loop
 for i in range(1, N_steps):  # 0 set by initial conditions
-    for j in range(N_objects):
-        # Update positions, with the already calculated previous acceleration
-        positions[i][j] = next_position(positions[i-1][j], velocities[i-1][j], previous_accelerations[j])
+    # Update positions, with the already calculated previous acceleration
+    positions[i] = next_position(positions[i-1], velocities[i-1], previous_accelerations)
     
     # Once all positions are updated, calculate new accelerations and update velocities
+    forces = np.zeros(shape=[N_objects, 3])  # to add up all forces on each object
     for j in range(N_objects):
-        force = np.zeros(3)  # to add up all forces on object j
-
         if periodic:  # get closest copy positions for object j
             copy_positions = closest_copy_coordinates(positions[i][j], positions[i])
 
-        for k in range(N_objects):
-            # Consider all other objects k, so without k==j
-            if k != j:
-                # Check for periodic box
-                if not periodic:
-                    force += gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
-                else:  # Apply minimal image convention
-                    force += gravity_force(masses[j], masses[k], positions[i][j], copy_positions[k])
+        for k in range(j+1, N_objects):
+            # Consider remaining objects k, so k>j
+            # Check for periodic box
+            if not periodic:
+                force = gravity_force(masses[j], masses[k], positions[i][j], positions[i][k])
+                forces[j] += force
+                forces[k] -= force
+            else:  # Apply minimal image convention
+                force = gravity_force(masses[j], masses[k], positions[i][j], copy_positions[k])
+                forces[j] += force
+                forces[k] -= force
         
         # Calculate the external force
         if use_external_force:
-            force += external_force(masses[j], times[i])
+            forces[j] += external_force(masses[j], times[i])
         
-        acceleration = force / masses[j]
+    accelerations = forces / masses.reshape(-1,1)
 
-        # So update velocities
-        velocities[i][j] = next_velocity(velocities[i-1][j], acceleration, previous_accelerations[j])
-        # And update the previous acceleration for the next loop
-        previous_accelerations[j] = acceleration
+    # So update velocities
+    velocities[i] = next_velocity(velocities[i-1], accelerations, previous_accelerations)
+    # And update the previous acceleration for the next loop
+    previous_accelerations = accelerations
     
     # Collisions
     for j in range(N_objects):
@@ -465,7 +456,8 @@ for i in range(N_objects):
 plt.xlabel('Position x')
 plt.ylabel('Position y')
 plt.title('Trajectories in the system')
-plt.legend()
+if N_objects <= 10:
+    plt.legend()
 plt.grid()
 #plt.xlim(-10.2, 10.2)
 #plt.ylim(-10.2, 10.2)

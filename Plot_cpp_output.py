@@ -5,11 +5,11 @@ import numpy as np
 print("Plotting results...")
 
 # Need these constants again
-output_dir = 'example_output\\external_force_test'
-dt = 1e-3  # timestep
-N_steps = 5000
+output_dir = 'example_output\\many_particles_test'
+dt = 5e-3  # timestep
+N_steps = 1000
 times = np.arange(N_steps) * dt
-N_objects = 3
+N_objects = 100
 
 filename = f"{output_dir}\\Gravity_simulation_output_cpp.csv"
 data = np.loadtxt(filename, delimiter=",")
@@ -39,7 +39,8 @@ for i in range(N_objects):
 plt.xlabel('Position x')
 plt.ylabel('Position y')
 plt.title('Trajectories in the system')
-plt.legend()
+if N_objects <= 10:
+    plt.legend()
 plt.grid()
 #plt.xlim(-1.2, 1.2)
 #plt.ylim(-1.2, 1.2)

@@ -1,7 +1,7 @@
 // A physical simulation of gravity between a chosen amount of objects.
-// Now also with collision physics and boundary conditions.
+// Now also with collision physics, boundary conditions and external forces.
 
-#include "Gravity_constants.hpp"
+#include "Gravity_constants_many_particles.hpp"
 #include <iostream>
 #include <vector>
 #include <numeric>
@@ -429,30 +429,34 @@ int main() {
         std::vector<double>(3, 0.0)
     );
 
-    // Then also determine acceleration for step 0
-    for (int j = 0; j < N_objects; j++) {
-        std::vector<double> force(3, 0.0);  // to add up all forces on object j
+    std::vector<std::vector<double>> forces(
+        N_objects,
+        std::vector<double>(3, 0.0)
+    );  // to add up all forces on each object
 
+    for (int j = 0; j < N_objects; j++) {
         std::vector<std::vector<double>> copy_positions;
         if (periodic) {
             copy_positions = closest_copy_coordinates(positions[0][j], positions[0]);
         }
 
-        for (int k = 0; k < N_objects; k++) {
-            // Consider all other objects k, so without k==j
-            if (k != j) {
-                // Check for periodic box
-                if (!periodic) {
-                    auto [distance, r_ij] = calculate_distance_vector(positions[0][j], positions[0][k]);
-                    for (int l = 0; l < 3; l++) {
-                        force[l] += gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                    }
+        for (int k = j+1; k < N_objects; k++) {
+            // Consider remaining objects k, so  k>j
+            // Check for periodic box
+            if (!periodic) {
+                auto [distance, r_ij] = calculate_distance_vector(positions[0][j], positions[0][k]);
+                for (int l = 0; l < 3; l++) {
+                    double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
+                    forces[j][l] += force;
+                    forces[k][l] -= force;
                 }
-                else {  // Apply minimal image convention
-                    auto [distance, r_ij] = calculate_distance_vector(positions[0][j], copy_positions[k]);
-                    for (int l = 0; l < 3; l++) {
-                        force[l] += gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                    }
+            }
+            else {  // Apply minimal image convention
+                auto [distance, r_ij] = calculate_distance_vector(positions[0][j], copy_positions[k]);
+                for (int l = 0; l < 3; l++) {
+                    double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
+                    forces[j][l] += force;
+                    forces[k][l] -= force;
                 }
             }
         }
@@ -461,13 +465,12 @@ int main() {
         if (use_external_force) {
             std::vector<double> external_force_vector = external_force();  // masses[j], 0.0
             for (int l = 0; l < 3; l++) {
-                force[l] += external_force_vector[l];
+                forces[j][l] += external_force_vector[l];
             }
         }
         
         for (int l = 0; l < 3; l++) {
-            double acceleration = force[l] / masses[j];
-            previous_accelerations[j][l] = acceleration;  // update these to contain step 0 accelerations
+            previous_accelerations[j][l] = forces[j][l] / masses[j];  // update these to contain step 0 accelerations
         }
     }
     
@@ -479,29 +482,33 @@ int main() {
         }
 
         // Once all positions are updated, calculate new accelerations and update velocities
+        std::vector<std::vector<double>> forces(
+            N_objects,
+            std::vector<double>(3, 0.0)
+        );  // to add up all forces on each object
         for (int j = 0; j < N_objects; j++) {
-            std::vector<double> force(3, 0.0);  // to add up all forces on object j
-
             std::vector<std::vector<double>> copy_positions;
             if (periodic) {
                 copy_positions = closest_copy_coordinates(positions[i][j], positions[i]);
             }
 
-            for (int k = 0; k < N_objects; k++) {
-                // Consider all other objects k, so without k==j
-                if (k != j) {
-                    // Check for periodic box
-                    if (!periodic) {
-                        auto [distance, r_ij] = calculate_distance_vector(positions[i][j], positions[i][k]);
-                        for (int l = 0; l < 3; l++) {
-                            force[l] += gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                        }
+            for (int k = j+1; k < N_objects; k++) {
+                // Consider remaining objects k, so k>j
+                // Check for periodic box
+                if (!periodic) {
+                    auto [distance, r_ij] = calculate_distance_vector(positions[i][j], positions[i][k]);
+                    for (int l = 0; l < 3; l++) {
+                        double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
+                        forces[j][l] += force;
+                        forces[k][l] -= force;
                     }
-                    else {  // Apply minimal image convention
-                        auto [distance, r_ij] = calculate_distance_vector(positions[i][j], copy_positions[k]);
-                        for (int l = 0; l < 3; l++) {
-                            force[l] += gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                        }
+                }
+                else {  // Apply minimal image convention
+                    auto [distance, r_ij] = calculate_distance_vector(positions[i][j], copy_positions[k]);
+                    for (int l = 0; l < 3; l++) {
+                        double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
+                        forces[j][l] += force;
+                        forces[k][l] -= force;
                     }
                 }
             }
@@ -510,12 +517,12 @@ int main() {
             if (use_external_force) {
                 std::vector<double> external_force_vector = external_force();  // masses[j], i*dt
                 for (int l = 0; l < 3; l++) {
-                    force[l] += external_force_vector[l];
+                    forces[j][l] += external_force_vector[l];
                 }
             }
 
             for (int l = 0; l < 3; l++) {
-                double acceleration = force[l] / masses[j];
+                double acceleration = forces[j][l] / masses[j];
                 // So update velocities, per component
                 velocities[i][j][l] = next_velocity(velocities[i-1][j][l], acceleration, previous_accelerations[j][l]);
                 // And update the previous acceleration for the next loop
