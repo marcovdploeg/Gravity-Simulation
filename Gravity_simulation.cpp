@@ -315,16 +315,16 @@ double python_mod(double a, double b) {
 /// @param position_i Position vector of object i
 /// @param positions Array of position vectors of all objects
 /// @return copy_positions; Array of position vectors of the closest copies of all objects
-std::vector<std::vector<double>> closest_copy_coordinates(
+std::vector<double> closest_copy_coordinates(
     std::vector<double> position_i,
-    std::vector<std::vector<double>> positions
+    std::vector<double> positions
 ) {
-    std::vector<std::vector<double>> copy_positions(N_objects, std::vector<double>(3));
+    std::vector<double> copy_positions(N_objects * 3, 0.0);
     for (int j = 0; j < N_objects; j++) {
         for (int k = 0; k < 3; k++) {
             // dereference box_length since it's an optional, but always has a value if this function is called
-            copy_positions[j][k] = position_i[k] - python_mod(position_i[k] - positions[j][k] + 0.5*(*box_length), *box_length)
-                                   + 0.5*(*box_length);
+            copy_positions[j*3 + k] = position_i[k] - python_mod(position_i[k] - positions[j*3 + k] + 0.5*(*box_length), *box_length)
+                                    + 0.5*(*box_length);
         }
     }
     return copy_positions;
@@ -397,66 +397,73 @@ int main() {
     }
 
     // Initialize positions and velocities
-    // Here positions[i] are the positions of all objects at timestep i,
-    // positions[i][j] is the position of object j at timestep i,
-    // positions[i][j][k] is the k-coordinate of object j at timestep i.
-    std::vector<std::vector<std::vector<double>>> positions(
-        N_steps,
-        std::vector<std::vector<double>>(
-            N_objects,
-            std::vector<double>(3, 0.0)  // 3 for x, y, z coordinates, initialized to 0.0
-        )
-    );
+    // In C++ it is faster to use flat vectors than jagged ones,
+    // meaning we only use a single index l that is related to the i,j,k
+    // we use in Python with l = i * (N_objects * 3) + j * 3 + k.
+    // It has the same length of N_steps*N_objects*3, and is initialized to 0.0
+    std::vector<double> positions(N_steps * N_objects * 3, 0.0);
+    std::vector<double> velocities(N_steps * N_objects * 3, 0.0);
 
-    std::vector<std::vector<std::vector<double>>> velocities(
-        N_steps,
-        std::vector<std::vector<double>>(
-            N_objects,
-            std::vector<double>(3, 0.0)  // 3 for x, y, z coordinates, initialized to 0.0
-        )
-    );
-
-    // Assign initial values
+    // Assign initial values (from jagged initial vectors)
     for (int j = 0; j < N_objects; j++) {
-        positions[0][j] = initial_positions[j];
-        velocities[0][j] = initial_velocities[j];
+        for (int k = 0; k < 3; k++) {
+            positions[j*3 + k] = initial_positions[j][k];
+            velocities[j*3 + k] = initial_velocities[j][k];
+        }
     }
 
     // Also need to keep the previous acceleration for velocity
     // Note we don't save these for all timesteps, only the previous one
-    std::vector<std::vector<double>> previous_accelerations(
-        N_objects,
-        std::vector<double>(3, 0.0)
-    );
+    std::vector<double> previous_accelerations(N_objects * 3, 0.0);
 
-    std::vector<std::vector<double>> forces(
-        N_objects,
-        std::vector<double>(3, 0.0)
-    );  // to add up all forces on each object
+    // To add up all forces on each object
+    std::vector<double> forces(N_objects * 3, 0.0);
 
+    // Loop for initial forces
     for (int j = 0; j < N_objects; j++) {
-        std::vector<std::vector<double>> copy_positions;
+        // Get the slice of positions for object j (with i=0)
+        std::vector<double> position_j(
+            positions.begin() + j*3,
+            positions.begin() + (j+1)*3
+        );
+
+        std::vector<double> copy_positions;
         if (periodic) {
-            copy_positions = closest_copy_coordinates(positions[0][j], positions[0]);
+            // Get the slice of all positions at step 0
+            std::vector<double> positions_0(
+                positions.begin(), 
+                positions.begin() + N_objects*3
+            );
+            copy_positions = closest_copy_coordinates(position_j, positions_0);
         }
 
         for (int k = j+1; k < N_objects; k++) {
             // Consider remaining objects k, so  k>j
             // Check for periodic box
             if (!periodic) {
-                auto [distance, r_ij] = calculate_distance_vector(positions[0][j], positions[0][k]);
+                // Get the slice of positions for object k (with i=0)
+                std::vector<double> position_k(
+                    positions.begin() + k*3,
+                    positions.begin() + (k+1)*3
+                );
+                auto [distance, r_ij] = calculate_distance_vector(position_j, position_k);
                 for (int l = 0; l < 3; l++) {
                     double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                    forces[j][l] += force;
-                    forces[k][l] -= force;
+                    forces[j*3 + l] += force;
+                    forces[k*3 + l] -= force;
                 }
             }
             else {  // Apply minimal image convention
-                auto [distance, r_ij] = calculate_distance_vector(positions[0][j], copy_positions[k]);
+                // Get the slice of copy positions for object k
+                std::vector<double> copy_position_k(
+                    copy_positions.begin() + k*3,
+                    copy_positions.begin() + (k+1)*3
+                );
+                auto [distance, r_ij] = calculate_distance_vector(position_j, copy_position_k);
                 for (int l = 0; l < 3; l++) {
                     double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                    forces[j][l] += force;
-                    forces[k][l] -= force;
+                    forces[j*3 + l] += force;
+                    forces[k*3 + l] -= force;
                 }
             }
         }
@@ -465,50 +472,85 @@ int main() {
         if (use_external_force) {
             std::vector<double> external_force_vector = external_force();  // masses[j], 0.0
             for (int l = 0; l < 3; l++) {
-                forces[j][l] += external_force_vector[l];
+                forces[j*3 + l] += external_force_vector[l];
             }
         }
         
         for (int l = 0; l < 3; l++) {
-            previous_accelerations[j][l] = forces[j][l] / masses[j];  // update these to contain step 0 accelerations
+            previous_accelerations[j*3 + l] = forces[j*3 + l] / masses[j];  // update these to contain step 0 accelerations
         }
     }
     
     // Main simulation loop
     for (size_t i = 1; i < N_steps; i++) {  // 0 set by initial conditions
         for (int j = 0; j < N_objects; j++) {
+            // Get the slice of positions, velocities and accelerations for object j
+            std::vector<double> previous_position_j(
+                positions.begin() + (i-1)*N_objects*3 + j*3,
+                positions.begin() + (i-1)*N_objects*3 + (j+1)*3
+            );
+            std::vector<double> previous_velocity_j(
+                velocities.begin() + (i-1)*N_objects*3 + j*3,
+                velocities.begin() + (i-1)*N_objects*3 + (j+1)*3
+            );
+            std::vector<double> previous_acceleration_j(
+                previous_accelerations.begin() + j*3,
+                previous_accelerations.begin() + (j+1)*3
+            );
             // Update positions, with the already calculated previous acceleration
-            positions[i][j] = next_position(positions[i-1][j], velocities[i-1][j], previous_accelerations[j]);
+            std::vector<double> position_j = next_position(previous_position_j, previous_velocity_j, previous_acceleration_j);
+            for (int k = 0; k < 3; k++) {
+                positions[i*N_objects*3 + j*3 + k] = position_j[k];
+            }
         }
 
         // Once all positions are updated, calculate new accelerations and update velocities
-        std::vector<std::vector<double>> forces(
-            N_objects,
-            std::vector<double>(3, 0.0)
-        );  // to add up all forces on each object
+        std::vector<double> forces(N_objects * 3, 0.0);  // to add up all forces on each object
         for (int j = 0; j < N_objects; j++) {
-            std::vector<std::vector<double>> copy_positions;
+            // Get the slice of positions for object j
+            std::vector<double> position_j(
+                positions.begin() + i*N_objects*3 + j*3,
+                positions.begin() + i*N_objects*3 + (j+1)*3
+            );
+
+            std::vector<double> copy_positions;
             if (periodic) {
-                copy_positions = closest_copy_coordinates(positions[i][j], positions[i]);
+                // Get the slice of all positions at step i
+                std::vector<double> positions_i(
+                    positions.begin() + i*N_objects*3, 
+                    positions.begin() + (i+1)*N_objects*3
+                );
+                copy_positions = closest_copy_coordinates(position_j, positions_i);
             }
 
             for (int k = j+1; k < N_objects; k++) {
                 // Consider remaining objects k, so k>j
                 // Check for periodic box
                 if (!periodic) {
-                    auto [distance, r_ij] = calculate_distance_vector(positions[i][j], positions[i][k]);
+                    // Get the slice of positions for object k
+                    std::vector<double> position_k(
+                        positions.begin() + i*N_objects*3 + k*3,
+                        positions.begin() + i*N_objects*3 + (k+1)*3
+                    );
+                    auto [distance, r_ij] = calculate_distance_vector(position_j, position_k);
                     for (int l = 0; l < 3; l++) {
                         double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                        forces[j][l] += force;
-                        forces[k][l] -= force;
+                        forces[j*3 + l] += force;
+                        forces[k*3 + l] -= force;
                     }
                 }
                 else {  // Apply minimal image convention
-                    auto [distance, r_ij] = calculate_distance_vector(positions[i][j], copy_positions[k]);
+                    // Get the slice of copy positions for object k 
+                    // (note copies are defined at this step, so no i index)
+                    std::vector<double> copy_position_k(
+                        copy_positions.begin() + k*3,
+                        copy_positions.begin() + (k+1)*3
+                    );
+                    auto [distance, r_ij] = calculate_distance_vector(position_j, copy_position_k);
                     for (int l = 0; l < 3; l++) {
                         double force = gravity_force(masses[j], masses[k], distance, r_ij[l]);
-                        forces[j][l] += force;
-                        forces[k][l] -= force;
+                        forces[j*3 + l] += force;
+                        forces[k*3 + l] -= force;
                     }
                 }
             }
@@ -517,22 +559,26 @@ int main() {
             if (use_external_force) {
                 std::vector<double> external_force_vector = external_force();  // masses[j], i*dt
                 for (int l = 0; l < 3; l++) {
-                    forces[j][l] += external_force_vector[l];
+                    forces[j*3 + l] += external_force_vector[l];
                 }
             }
 
             for (int l = 0; l < 3; l++) {
-                double acceleration = forces[j][l] / masses[j];
+                double acceleration = forces[j*3 + l] / masses[j];
                 // So update velocities, per component
-                velocities[i][j][l] = next_velocity(velocities[i-1][j][l], acceleration, previous_accelerations[j][l]);
+                velocities[i*N_objects*3 + j*3 + l] = next_velocity(velocities[(i-1)*N_objects*3 + j*3 + l], acceleration, previous_accelerations[j*3 + l]);
+                
                 // And update the previous acceleration for the next loop
-                previous_accelerations[j][l] = acceleration;
+                previous_accelerations[j*3 + l] = acceleration;
             }
         }
 
         // Collisions
         for (int j = 0; j < N_objects; j++) {
-            std::vector<double> position_j = positions[i][j];
+            std::vector<double> position_j(
+                positions.begin() + i*N_objects*3 + j*3,
+                positions.begin() + i*N_objects*3 + (j+1)*3
+            );
             // Now only check for collisions between object pairs
             for (int k = j+1; k < N_objects; k++) {
                 // (Fun sidenote: in Python, we can define velocity_j in the previous loop,
@@ -540,10 +586,19 @@ int main() {
                 // velocity_j. But in C++, that does not happen, so we need to define it here, so
                 // that a potential change due to a collision with a previous object is not lost.
                 // Before I fixed this, it altered the example run quite significantly.)
-                std::vector<double> velocity_j = velocities[i][j];
+                std::vector<double> velocity_j(
+                    velocities.begin() + i*N_objects*3 + j*3,
+                    velocities.begin() + i*N_objects*3 + (j+1)*3
+                );
 
-                std::vector<double> position_k = positions[i][k];
-                std::vector<double> velocity_k = velocities[i][k];
+                std::vector<double> position_k(
+                    positions.begin() + i*N_objects*3 + k*3,
+                    positions.begin() + i*N_objects*3 + (k+1)*3
+                );
+                std::vector<double> velocity_k(
+                    velocities.begin() + i*N_objects*3 + k*3,
+                    velocities.begin() + i*N_objects*3 + (k+1)*3
+                );
                 // Check collision condition
                 double distance = 0.0;
                 for (int l = 0; l < 3; l++) {
@@ -575,8 +630,10 @@ int main() {
                     velocity_after_k = galilean_transform(velocity_after_k, negative_velocity_k);
 
                     // And finally assign
-                    velocities[i][j] = velocity_after_j;
-                    velocities[i][k] = velocity_after_k;
+                    for (int l = 0; l < 3; l++) {
+                        velocities[i*N_objects*3 + j*3 + l] = velocity_after_j[l];
+                        velocities[i*N_objects*3 + k*3 + l] = velocity_after_k[l];
+                    }
                 }
             }
         }
@@ -589,18 +646,32 @@ int main() {
             // Check if the object is outside the box
             bool is_out = false;
             for (int k = 0; k < 3; k++) {
-                if (std::abs(positions[i][j][k]) > 0.5 * (*box_length)) {
+                if (std::abs(positions[i*N_objects*3 + j*3 + k]) > 0.5 * (*box_length)) {
                     is_out = true;
                     break;
                 }
             }
             if (is_out) {
+                std::vector<double> position_j(
+                    positions.begin() + i*N_objects*3 + j*3,
+                    positions.begin() + i*N_objects*3 + (j+1)*3
+                );
                 // Check finite or periodic box
                 if (!periodic) {
-                    velocities[i][j] = wall_collision_check_and_transfer(positions[i][j], velocities[i][j]);
+                    std::vector<double> velocity_j(
+                        velocities.begin() + i*N_objects*3 + j*3,
+                        velocities.begin() + i*N_objects*3 + (j+1)*3
+                    );
+                    std::vector<double> new_velocity_j = wall_collision_check_and_transfer(position_j, velocity_j);
+                    for (int k = 0; k < 3; k++) {
+                        velocities[i*N_objects*3 + j*3 + k] = new_velocity_j[k];
+                    }
                 }
                 else {
-                    positions[i][j] = apply_periodic_crossing(positions[i][j]);
+                    std::vector<double> new_position_j = apply_periodic_crossing(position_j);
+                    for (int k = 0; k < 3; k++) {
+                        positions[i*N_objects*3 + j*3 + k] = new_position_j[k];
+                    }
                 }
             }
         }
@@ -615,7 +686,7 @@ int main() {
         for (int j = 0; j < N_objects; j++) {
             double sum_of_squares = 0.0;
             for (int k = 0; k < 3; ++k) {
-                sum_of_squares += velocities[i][j][k]*velocities[i][j][k];
+                sum_of_squares += velocities[i*N_objects*3 + j*3 + k]*velocities[i*N_objects*3 + j*3 + k];
             }
             kinetic_energy += 0.5 * masses[j] * sum_of_squares;  // sum the kinetic energy for all particles
         }
@@ -623,19 +694,32 @@ int main() {
 
         double potential_energy = 0.0;  // get the potential energy of all objects at this step
         for (int j = 0; j < N_objects-1; j++) {  // don't need to consider the last object, is cancelled in next loop
-            std::vector<double> r_j = positions[i][j];
+            std::vector<double> r_j(
+                positions.begin() + i*N_objects*3 + j*3,
+                positions.begin() + i*N_objects*3 + (j+1)*3
+            );
             for (int k = j+1; k < N_objects; k++) {  // start from the object after j
                 double distance = 0.0;
                 if (!periodic) {
-                    std::vector<double> r_k = positions[i][k];
+                    std::vector<double> r_k(
+                        positions.begin() + i*N_objects*3 + k*3,
+                        positions.begin() + i*N_objects*3 + (k+1)*3
+                    );
                     for (int l = 0; l < 3; l++) {
                         distance += (r_j[l] - r_k[l]) * (r_j[l] - r_k[l]);
                     }
                     distance = std::sqrt(distance);
                 }
                 else {  // Apply minimal image convention
-                    std::vector<std::vector<double>> copy_positions = closest_copy_coordinates(r_j, positions[i]);
-                    std::vector<double> copy_r_k = copy_positions[k];
+                    std::vector<double> positions_i(
+                        positions.begin() + i*N_objects*3, 
+                        positions.begin() + (i+1)*N_objects*3
+                    );
+                    std::vector<double> copy_positions = closest_copy_coordinates(r_j, positions_i);
+                    std::vector<double> copy_r_k(
+                        copy_positions.begin() + k*3,
+                        copy_positions.begin() + (k+1)*3
+                    );
                     for (int l = 0; l < 3; l++) {
                         distance += (r_j[l] - copy_r_k[l]) * (r_j[l] - copy_r_k[l]);
                     }
@@ -663,7 +747,7 @@ int main() {
     for (size_t i = 0; i < N_steps; i++) {
         for (int j = 0; j < N_objects; j++) {
             for (int k = 0; k < 3; k++) {
-                out_file << positions[i][j][k] << ",";
+                out_file << positions[i*N_objects*3 + j*3 + k] << ",";
             }
         }
         out_file << kinetic_total[i] << "," << potential_total[i] << "," << energy[i] << "\n";
