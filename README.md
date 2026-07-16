@@ -50,6 +50,5 @@ The test with many particles shows the simulation is also capable of simulating 
 although the runtime will grow large with more objects.
 
 The results from the Python and C++ simulations are the same, as they should.
-The only difference is the runtime; on my machine the Python simulation took about 1.2 seconds, 
-while the C++ simulation only needed about 0.5 seconds for the basic example 
-(and only 0.05 seconds when compiled for maximum speed).
+The only difference is the runtime; on my machine the Python simulation takes about 1.2 seconds, 
+while the C++ simulation only needs about 0.05 seconds for the basic example.
